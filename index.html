@@ -262,10 +262,18 @@ tbody tr.sel{background:#e9f7ee;box-shadow:inset 3px 0 0 var(--green)}
 #ctxmenu button.danger{color:var(--red)}
 @media (max-width:1560px){.hmedals{display:none}}
 @media print{.sidebar,.topbar,.side-add{display:none}}
+
+/* ============ ĐĂNG NHẬP ============ */
+.auth-card{width:400px}
+.auth-card .fields{grid-template-columns:1fr!important}
+.auth-err{background:var(--red-soft);color:var(--red);border-radius:9px;padding:9px 12px;font-size:.8rem;font-weight:600}
+.auth-sub{padding:0 20px 12px;margin-top:-6px;color:var(--muted);font-size:.8rem}
+.logout-btn{border:1px solid var(--line);background:#fff;border-radius:10px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;color:var(--muted);flex-shrink:0}
+.logout-btn:hover{border-color:var(--red);color:var(--red)}
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app" id="appRoot" style="display:none">
 
   <!-- ================= SIDEBAR ================= -->
   <aside class="sidebar">
@@ -289,8 +297,8 @@ tbody tr.sel{background:#e9f7ee;box-shadow:inset 3px 0 0 var(--green)}
       <div class="hotline"><svg class="i" viewBox="0 0 24 24"><path d="M5 4c.5 8.5 6.5 14.5 15 15l1-4.2-4.3-1.8-1.9 1.9c-2.8-1.2-5.5-3.9-6.7-6.7l1.9-1.9L8.2 2 4 3z"/></svg>Hotline: <b>1900 1175</b></div>
       <div class="date-chip"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg><div><div class="d1" id="todayD"></div><div class="d2" id="todayW"></div></div></div>
       <button class="bell" title="Thông báo" onclick="navTo('alert')"><svg class="i" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 3H4z"/><path d="M10 21a2.5 2.5 0 0 0 4 0"/></svg><span class="dot" id="bellN">5</span></button>
-      <div class="doctor"><div class="avatar">NA</div><div><div class="nm">BS. Nguyễn Văn A</div><div class="rl">Bác sĩ điều trị</div></div></div>
-      <select class="lang"><option>VI</option><option>EN</option></select>
+      <div class="doctor"><div class="avatar" id="curAvatar">–</div><div><div class="nm" id="curName">—</div><div class="rl">Đang đăng nhập</div></div></div>
+      <button class="logout-btn" title="Đăng xuất" onclick="doLogout()">⎋</button>
     </header>
 
     <div class="content">
@@ -370,6 +378,24 @@ tbody tr.sel{background:#e9f7ee;box-shadow:inset 3px 0 0 var(--green)}
   </div>
 </div>
 
+<!-- Đăng nhập / Đăng ký -->
+<div class="overlay show" id="authOv">
+  <div class="modal auth-card">
+    <h3>🔒 Đăng nhập hệ thống — Khoa Nội Hô Hấp, BVQY 175</h3>
+    <div class="auth-sub">Dành cho bác sĩ / điều dưỡng của khoa. Vui lòng đăng nhập để xem và cập nhật danh sách bệnh nhân dùng chung.</div>
+    <div class="fields">
+      <div class="full auth-err" id="authErr" style="display:none"></div>
+      <div class="full"><label>Email</label><input id="a_email" type="email" placeholder="ten@benhvien175.vn" autocomplete="username"></div>
+      <div class="full"><label>Mật khẩu</label><input id="a_pass" type="password" placeholder="Tối thiểu 6 ký tự" autocomplete="current-password"></div>
+      <div class="full" id="a_nameWrap" style="display:none"><label>Họ tên hiển thị (VD: BS. Nguyễn Văn A)</label><input id="a_name" placeholder="BS. Nguyễn Văn A"></div>
+    </div>
+    <div class="foot" style="justify-content:space-between;align-items:center">
+      <a id="authToggle" onclick="toggleAuthMode()" style="font-size:.8rem;color:var(--teal);cursor:pointer">Chưa có tài khoản? Đăng ký</a>
+      <button class="btn primary" id="authSubmitBtn" onclick="submitAuth()">Đăng nhập</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal thêm bệnh nhân -->
 <div class="overlay" id="modalOv">
   <div class="modal">
@@ -397,14 +423,18 @@ tbody tr.sel{background:#e9f7ee;box-shadow:inset 3px 0 0 var(--green)}
 <div id="ctxmenu"></div>
 <div id="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 /* ================================================================
    QUẢN LÝ BỆNH NHÂN CAN THIỆP HÔ HẤP — KHOA NỘI HÔ HẤP, BVQY 175
-   Ứng dụng 1 file HTML, chạy hoàn toàn phía trình duyệt (client-side).
-   KHÔNG có backend/database — dữ liệu chỉ tồn tại trong bộ nhớ của tab
-   trình duyệt đang mở và MẤT khi tải lại trang / đóng tab. Đây là bản
-   giao diện + quy trình nghiệp vụ để kết nối với backend thật (xem
-   README.md đi kèm) trước khi dùng cho nhiều người dùng đồng thời.
+   Ứng dụng 1 file HTML. Dữ liệu bệnh nhân được lưu và đồng bộ TRỰC TIẾP
+   qua Firebase (Cloud Firestore) — nhiều bác sĩ/điều dưỡng cùng đăng
+   nhập sẽ thấy CHUNG một danh sách bệnh nhân, cập nhật theo thời gian
+   thực. Đăng nhập bắt buộc qua Firebase Authentication (email/mật khẩu)
+   trước khi xem được dữ liệu — xem README.md đi kèm để biết chi tiết
+   về mô hình bảo mật và cách quản trị tài khoản.
    ================================================================ */
 
 /* ---------- Icon SVG (stroke) ---------- */
@@ -503,25 +533,27 @@ function getChecklist(p,stageIdx){
   return p.checklists[stageIdx];
 }
 
-/* ---------- Dữ liệu bệnh nhân THẬT ----------
-   Ứng dụng khởi động với danh sách RỖNG — không còn dữ liệu mẫu/demo.
-   Bệnh nhân được thêm qua nút "Thêm bệnh nhân" (xem addPatient()). */
+/* ---------- Dữ liệu bệnh nhân ----------
+   Danh sách bệnh nhân là mảng CACHE cục bộ, được đồng bộ tự động từ
+   Cloud Firestore qua onSnapshot() — xem phần "FIREBASE" phía dưới.
+   Không còn thao tác thêm/sửa trực tiếp vào mảng này; mọi thay đổi đều
+   phải ghi lên Firestore trước, rồi Firestore sẽ tự phát lại cho mảng
+   này (và cho MỌI người dùng khác đang mở ứng dụng cùng lúc). */
 function d2s(d){return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear()}
 /* Ngày "hôm nay" của hệ thống — LUÔN lấy theo ngày thực tế lúc tải trang (không hardcode). */
 const TODAY=new Date();TODAY.setHours(0,0,0,0);
 function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}
 
-let AUTOID=0;
-/* Khởi tạo 1 bệnh nhân THẬT. Mọi thông tin (tên, tuổi, chẩn đoán, thủ thuật, liên hệ...)
-   phải được nhập từ form — hàm này không tự sinh dữ liệu giả. */
-function makePatient(stage,opts={}){
-  AUTOID++;
+/* Khởi tạo 1 bệnh nhân THẬT (id do Firestore cấp — xem nextPatientId()).
+   Mọi thông tin (tên, tuổi, chẩn đoán, thủ thuật, liên hệ...) phải được
+   nhập từ form — hàm này không tự sinh dữ liệu giả. */
+function makePatient(stage,opts={},id){
   const y=TODAY.getFullYear().toString().slice(2),m=String(TODAY.getMonth()+1).padStart(2,"0"),d=String(TODAY.getDate()).padStart(2,"0");
-  const code=y+m+d+String(AUTOID).padStart(3,"0");
+  const code=y+m+d+String(id).padStart(3,"0");
   const stepDates=Array(8).fill("");
   stepDates[stage]="Đang thực hiện";
   return {
-    id:AUTOID,code,name:opts.name||"",age:opts.age||"",sex:opts.sex||"Nam",
+    id,code,name:opts.name||"",age:opts.age||"",sex:opts.sex||"Nam",
     dx:opts.dx||"",proc:opts.proc||PROCS[0],stage,overdue:opts.overdue||false,gpbWaiting:opts.gpbWaiting||false,
     due:opts.due||d2s(TODAY),doctor:opts.doctor||"",
     phone:opts.phone||"",
@@ -551,7 +583,7 @@ const CATS={
 const cnt=k=>patients.filter(CATS[k].test).length;
 
 /* ---------- Trạng thái UI ---------- */
-let curTab="all", selId=patients[0]?.id, curNav="home";
+let curTab="all", selId=undefined, curNav="home";
 const PAGE_SIZE=5;
 let visN=PAGE_SIZE;
 const $=id=>document.getElementById(id);
@@ -672,31 +704,56 @@ function openMenu(e,id){
 }
 function closeMenu(){$("ctxmenu").style.display="none"}
 document.addEventListener("click",e=>{if(!e.target.closest("#ctxmenu")&&!e.target.closest(".menu-btn"))closeMenu()});
-function advance(id){
+
+/* Chuyển bệnh nhân sang giai đoạn tiếp theo — ghi thẳng lên Firestore,
+   giao diện sẽ tự cập nhật lại khi onSnapshot() nhận được thay đổi. */
+async function advance(id){
   const p=patients.find(x=>x.id===id);
+  if(!p)return;
   if(p.stage>=7){toast("Bệnh nhân đã hoàn tất quy trình");closeMenu();return}
   const items=getChecklist(p,p.stage);
   const undone=items.filter(c=>!c.done).length;
   if(undone>0&&!confirm(`Còn ${undone} hạng mục chưa hoàn thành ở giai đoạn "${STAGES[p.stage].n}". Vẫn chuyển sang giai đoạn tiếp theo?`)){closeMenu();return}
   if(p.stage===6&&!p.resultText.trim()&&!confirm('Chưa nhập "Kết quả chẩn đoán sau can thiệp". Vẫn chuyển tiếp?')){closeMenu();return}
-  p.stepDates[p.stage]=d2s(TODAY);p.stage++;p.overdue=false;
-  if(p.stage===2&&!isEbusTbna(p)){
+  const stepDates=p.stepDates.slice();
+  stepDates[p.stage]=d2s(TODAY);
+  let stage=p.stage+1;
+  if(stage===2&&!isEbusTbna(p)){
     /* Không phải EBUS-TBNA → không cần thủ trưởng BV ký duyệt, bỏ qua thẳng giai đoạn này */
-    p.stepDates[p.stage]=d2s(TODAY);p.stage++;
+    stepDates[stage]=d2s(TODAY);
+    stage++;
   }
-  if(p.stage===4)p.gpbWaiting=true;
-  if(p.stage===7)p.gpbWaiting=false;
-  selId=id;closeMenu();renderAll();
-  toast(`✅ ${p.name} → Bước ${displayStepNum(p,p.stage)}: ${STAGES[p.stage].n}`);
+  let gpbWaiting=p.gpbWaiting;
+  if(stage===4)gpbWaiting=true;
+  if(stage===7)gpbWaiting=false;
+  closeMenu();
+  try{
+    await patientsCol.doc(String(id)).update({
+      stage,overdue:false,gpbWaiting,stepDates,checklists:p.checklists,
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    selId=id;
+    toast(`✅ ${p.name} → Bước ${displayStepNum({proc:p.proc},stage)}: ${STAGES[stage].n}`);
+  }catch(e){toast("⚠️ Lỗi lưu dữ liệu: "+e.message)}
 }
-function toggleStar(id){const p=patients.find(x=>x.id===id);p.star=!p.star;closeMenu();renderAll();toast(p.star?"⭐ Đã đánh dấu ưu tiên":"Đã bỏ đánh dấu")}
+async function toggleStar(id){
+  const p=patients.find(x=>x.id===id);if(!p)return;
+  closeMenu();
+  try{
+    await patientsCol.doc(String(id)).update({star:!p.star,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+    toast(!p.star?"⭐ Đã đánh dấu ưu tiên":"Đã bỏ đánh dấu");
+  }catch(e){toast("⚠️ Lỗi: "+e.message)}
+}
 function callP(id){const p=patients.find(x=>x.id===id);closeMenu();if(!p.phone){toast(`⚠️ ${p.name} chưa có số điện thoại`);return}toast(`📞 Đang gọi ${p.name} — ${p.phone.replace(/(\d{4})(\d{3})(\d{3})/,"$1 $2 $3")}`)}
-function removeP(id){
-  const p=patients.find(x=>x.id===id);closeMenu();
+async function removeP(id){
+  const p=patients.find(x=>x.id===id);if(!p)return;
+  closeMenu();
   if(!confirm(`Xóa bệnh nhân ${p.name} (${p.code}) khỏi danh sách?`))return;
-  patients.splice(patients.indexOf(p),1);
-  if(selId===id)selId=patients[0]?.id;
-  renderAll();toast("🗑️ Đã xóa bệnh nhân");
+  try{
+    await patientsCol.doc(String(id)).delete();
+    if(selId===id)selId=undefined;
+    toast("🗑️ Đã xóa bệnh nhân");
+  }catch(e){toast("⚠️ Lỗi xóa: "+e.message)}
 }
 
 /* ---------- BỆNH NHÂN ƯU TIÊN ---------- */
@@ -860,19 +917,40 @@ function renderChecklist(){
     </div>
     <div class="chk-print"><a onclick="printChecklist()">🖶 In phiếu checklist</a></div>`;
 }
-function toggleChk(stageIdx,i){
+async function toggleChk(stageIdx,i){
   const p=selP();
+  if(!p)return;
   const items=getChecklist(p,stageIdx);
   items[i].done=!items[i].done;
   items[i].date=items[i].done?d2s(TODAY):null;
   renderChecklist();
-  toast(items[i].done?`✅ Đã hoàn thành: ${items[i].t}`:`↩️ Bỏ đánh dấu: ${items[i].t}`);
+  try{
+    await patientsCol.doc(String(p.id)).update({
+      [`checklists.${stageIdx}`]:items,
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    toast(items[i].done?`✅ Đã hoàn thành: ${items[i].t}`:`↩️ Bỏ đánh dấu: ${items[i].t}`);
+  }catch(e){toast("⚠️ Lỗi lưu: "+e.message)}
 }
+let resultTextTimer=null;
 function updateResultText(v){
-  const p=selP();p.resultText=v;
+  const p=selP();if(!p)return;
+  p.resultText=v;
+  clearTimeout(resultTextTimer);
+  resultTextTimer=setTimeout(()=>{
+    patientsCol.doc(String(p.id)).update({resultText:v,updatedAt:firebase.firestore.FieldValue.serverTimestamp()})
+      .catch(e=>toast("⚠️ Lỗi lưu: "+e.message));
+  },600);
 }
-function saveChecklist(id){
-  toast("💾 Đã lưu checklist giai đoạn hiện tại");
+async function saveChecklist(id){
+  const p=patients.find(x=>x.id===id);if(!p)return;
+  try{
+    await patientsCol.doc(String(id)).update({
+      checklists:p.checklists,resultText:p.resultText,
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    toast("💾 Đã lưu checklist giai đoạn hiện tại");
+  }catch(e){toast("⚠️ Lỗi lưu: "+e.message)}
 }
 function printChecklist(){
   const p=selP();
@@ -926,21 +1004,31 @@ function openModal(){
   setTimeout(()=>$("f_name").focus(),50);
 }
 function closeModal(){$("modalOv").classList.remove("show");["f_name","f_age","f_dx","f_phone","f_addr","f_bhyt","f_bhytno"].forEach(i=>$(i).value="")}
-function addPatient(){
+async function addPatient(){
   const name=$("f_name").value.trim(),age=+$("f_age").value,dx=$("f_dx").value.trim();
   if(!name||!age||!dx){toast("⚠️ Vui lòng nhập đủ Họ tên, Tuổi và Chẩn đoán");return}
   const dv=$("f_date").value;const due=dv?(([y,m,d])=>`${d}/${m}/${y}`)(dv.split("-")):d2s(TODAY);
-  const p=makePatient(0,{
-    name,age,sex:$("f_sex").value,dx,
-    proc:PROCS[+$("f_proc").value],doctor:$("f_doc").value,due,
-    phone:$("f_phone").value.replace(/\D/g,""),
-    addr:$("f_addr").value.trim(),
-    bhyt:$("f_bhyt").value.trim(),
-    bhytNo:$("f_bhytno").value.replace(/\D/g,"")
-  });
-  patients.unshift(p);selId=p.id;curTab="wait";visN=PAGE_SIZE;
-  closeModal();renderAll();
-  toast(`✅ Đã thêm bệnh nhân ${name} — Mã BN: ${p.code}`);
+  const btn=document.activeElement;
+  try{
+    const id=await nextPatientId();
+    const p=makePatient(0,{
+      name,age,sex:$("f_sex").value,dx,
+      proc:PROCS[+$("f_proc").value],doctor:$("f_doc").value,due,
+      phone:$("f_phone").value.replace(/\D/g,""),
+      addr:$("f_addr").value.trim(),
+      bhyt:$("f_bhyt").value.trim(),
+      bhytNo:$("f_bhytno").value.replace(/\D/g,"")
+    },id);
+    await patientsCol.doc(String(id)).set({
+      ...p,
+      createdBy:(auth.currentUser&&auth.currentUser.email)||"",
+      createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    selId=id;curTab="wait";visN=PAGE_SIZE;
+    closeModal();
+    toast(`✅ Đã thêm bệnh nhân ${name} — Mã BN: ${p.code}`);
+  }catch(e){toast("⚠️ Lỗi lưu bệnh nhân: "+e.message)}
 }
 $("modalOv").addEventListener("click",e=>{if(e.target.id==="modalOv")closeModal()});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeMenu()}});
@@ -960,7 +1048,130 @@ function updateBell(){
 const WEEKDAYS=["Chủ Nhật","Thứ Hai","Thứ Ba","Thứ Tư","Thứ Năm","Thứ Sáu","Thứ Bảy"];
 function renderTodayChip(){$("todayD").textContent=d2s(TODAY);$("todayW").textContent=WEEKDAYS[TODAY.getDay()]}
 function renderAll(){renderTodayChip();renderNav();renderTimeline();renderTabs();renderTable();renderPrio();renderChart();renderDetail();renderProgress();renderChecklist();updateBell()}
-renderAll();
+
+/* ================================================================
+   FIREBASE — Xác thực (Authentication) + Dữ liệu dùng chung (Firestore)
+   Dự án Firebase: quan-ly-benh-nhan-ho-hap.
+   - Đăng nhập bắt buộc (email/mật khẩu) trước khi thấy dữ liệu bệnh nhân.
+   - Quy tắc bảo mật Firestore: chỉ tài khoản ĐÃ đăng nhập mới đọc/ghi
+     được dữ liệu (mọi tài khoản đã đăng nhập có toàn quyền đọc/ghi —
+     phù hợp với việc "cả khoa cùng dùng chung 1 danh sách"; xem
+     README.md nếu khoa muốn phân quyền chặt hơn sau này).
+   ================================================================ */
+const firebaseConfig={
+  apiKey:"AIzaSyCsV2z2PaJ5m9y0dxVf-0N-O7qoBxeWHUU",
+  authDomain:"quan-ly-benh-nhan-ho-hap.firebaseapp.com",
+  projectId:"quan-ly-benh-nhan-ho-hap",
+  storageBucket:"quan-ly-benh-nhan-ho-hap.firebasestorage.app",
+  messagingSenderId:"141375757602",
+  appId:"1:141375757602:web:6bdee9d604ee1cae35d97b"
+};
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth();
+const db=firebase.firestore();
+const patientsCol=db.collection("patients");
+const counterRef=db.collection("meta").doc("counter");
+
+/* Cấp số thứ tự (id) kế tiếp cho bệnh nhân mới — dùng transaction để
+   không bị trùng số khi nhiều người cùng thêm bệnh nhân cùng lúc. */
+function nextPatientId(){
+  return db.runTransaction(async tx=>{
+    const snap=await tx.get(counterRef);
+    const next=snap.exists&&snap.data().nextId?snap.data().nextId:1;
+    tx.set(counterRef,{nextId:next+1},{merge:true});
+    return next;
+  });
+}
+
+let unsubPatients=null;
+function startPatientsSync(){
+  if(unsubPatients)return;
+  unsubPatients=patientsCol.orderBy("id","desc").onSnapshot(snap=>{
+    patients.length=0;
+    snap.forEach(doc=>patients.push(doc.data()));
+    if(selId===undefined||!patients.find(p=>p.id===selId))selId=patients[0]?patients[0].id:undefined;
+    renderAll();
+  },err=>{
+    console.error(err);
+    toast("⚠️ Lỗi đồng bộ dữ liệu: "+err.message);
+  });
+}
+function stopPatientsSync(){
+  if(unsubPatients){unsubPatients();unsubPatients=null}
+}
+
+/* ---------- ĐĂNG NHẬP / ĐĂNG KÝ ---------- */
+let authMode="login";
+function toggleAuthMode(){
+  authMode=authMode==="login"?"register":"login";
+  $("a_nameWrap").style.display=authMode==="register"?"block":"none";
+  $("authSubmitBtn").textContent=authMode==="register"?"Đăng ký":"Đăng nhập";
+  $("authToggle").textContent=authMode==="register"?"Đã có tài khoản? Đăng nhập":"Chưa có tài khoản? Đăng ký";
+  $("authErr").style.display="none";
+}
+function authErrMsg(code){
+  const map={
+    "auth/user-not-found":"Sai email hoặc mật khẩu.",
+    "auth/wrong-password":"Sai email hoặc mật khẩu.",
+    "auth/invalid-credential":"Sai email hoặc mật khẩu.",
+    "auth/invalid-login-credentials":"Sai email hoặc mật khẩu.",
+    "auth/email-already-in-use":"Email này đã được đăng ký — hãy chọn \"Đăng nhập\".",
+    "auth/weak-password":"Mật khẩu quá ngắn (tối thiểu 6 ký tự).",
+    "auth/invalid-email":"Email không hợp lệ.",
+    "auth/too-many-requests":"Thử sai quá nhiều lần, vui lòng chờ rồi thử lại.",
+    "auth/network-request-failed":"Lỗi kết nối mạng, vui lòng thử lại."
+  };
+  return map[code]||("Lỗi đăng nhập ("+code+")");
+}
+async function submitAuth(){
+  const email=$("a_email").value.trim(),pass=$("a_pass").value;
+  $("authErr").style.display="none";
+  if(!email||!pass){$("authErr").textContent="Vui lòng nhập đầy đủ email và mật khẩu.";$("authErr").style.display="block";return}
+  const btn=$("authSubmitBtn");
+  btn.disabled=true;const oldTxt=btn.textContent;btn.textContent="Đang xử lý...";
+  try{
+    if(authMode==="login"){
+      await auth.signInWithEmailAndPassword(email,pass);
+    }else{
+      const name=$("a_name").value.trim();
+      const cred=await auth.createUserWithEmailAndPassword(email,pass);
+      if(name){
+        await cred.user.updateProfile({displayName:name});
+        /* onAuthStateChanged đã bắn ra ngay sau khi tạo tài khoản (trước khi
+           updateProfile xong) nên tên hiển thị lúc đó vẫn là email — cập nhật
+           lại giao diện ngay tại đây cho khớp, không cần tải lại trang. */
+        $("curName").textContent=name;
+        $("curAvatar").textContent=initials(name);
+      }
+    }
+  }catch(e){
+    $("authErr").textContent=authErrMsg(e.code);
+    $("authErr").style.display="block";
+  }
+  btn.disabled=false;btn.textContent=oldTxt;
+}
+function doLogout(){
+  closeMenu();
+  auth.signOut();
+}
+auth.onAuthStateChanged(user=>{
+  if(user){
+    $("authOv").classList.remove("show");
+    $("appRoot").style.display="grid";
+    const dispName=user.displayName||(user.email?user.email.split("@")[0]:"BS");
+    $("curName").textContent=dispName;
+    $("curAvatar").textContent=initials(dispName);
+    startPatientsSync();
+  }else{
+    stopPatientsSync();
+    patients.length=0;
+    selId=undefined;
+    $("appRoot").style.display="none";
+    $("authOv").classList.add("show");
+    $("a_pass").value="";
+  }
+});
+
 </script>
 </body>
 </html>
