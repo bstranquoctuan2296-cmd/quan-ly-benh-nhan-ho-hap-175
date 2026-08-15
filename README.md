@@ -2,43 +2,49 @@
 
 Ứng dụng web quản lý quy trình bệnh nhân can thiệp hô hấp (EBUS-TBNA, EBUS-TBLB, Nội soi phế quản + sinh thiết, Sinh thiết xuyên thành, Sinh thiết màng phổi) từ lúc hẹn nhập viện đến khi trả kết quả.
 
-## ⚠️ Tình trạng hiện tại — đọc trước khi dùng cho bệnh nhân thật
+## ✅ Đã có backend dùng chung — đọc trước khi dùng cho bệnh nhân thật
 
-Đây là **1 file HTML chạy hoàn toàn phía trình duyệt (client-side)**, không có backend/database.
+Ứng dụng hiện đã kết nối **backend thật (Firebase — Firestore + Authentication)**, thay cho bản trước chỉ chạy trong bộ nhớ trình duyệt.
 
-- **Không có nơi lưu trữ dùng chung.** Toàn bộ dữ liệu chỉ tồn tại trong bộ nhớ của tab trình duyệt đang mở — tải lại trang hoặc đóng tab là **mất hết dữ liệu**.
-- **Không đồng bộ nhiều người dùng.** Nếu 2 người mở file này trên 2 máy khác nhau, họ sẽ thấy 2 danh sách bệnh nhân độc lập, không ai thấy dữ liệu của người kia.
-- Dữ liệu mẫu/demo trước đây đã được **xóa hoàn toàn** — ứng dụng khởi động với danh sách rỗng, sẵn sàng để bác sĩ/điều dưỡng nhập bệnh nhân thật qua nút "Thêm bệnh nhân".
+- **Dữ liệu dùng chung, đồng bộ theo thời gian thực.** Mọi bác sĩ/điều dưỡng đăng nhập vào cùng 1 danh sách bệnh nhân. Thêm/sửa bệnh nhân, tick checklist, chuyển giai đoạn ở máy này sẽ hiện ngay ở máy khác đang mở ứng dụng — không cần tải lại trang.
+- **Cần đăng nhập để dùng.** Mở file `index.html` sẽ hiện màn hình đăng nhập/đăng ký trước khi thấy được danh sách bệnh nhân.
+- **Đăng ký tự do (self-service).** Bất kỳ ai có link tới file này đều có thể tự tạo tài khoản bằng email + mật khẩu (không cần người quản trị duyệt trước). Đây là lựa chọn ưu tiên tốc độ triển khai nhanh cho khoa; xem mục "Lưu ý về bảo mật & phân quyền" bên dưới nếu khoa muốn siết lại.
+- **Dữ liệu không còn nằm trong máy/trình duyệt của từng người** mà nằm trên hạ tầng Google Cloud (Firebase, khu vực Singapore). Khoa đã xác nhận nội dung bệnh nhân trong ứng dụng này không thuộc diện cần bảo mật nghiêm ngặt, nên đã chọn giải pháp cloud để triển khai nhanh cho nhiều người dùng chung.
 
-Vì khoa cần **nhiều bác sĩ/điều dưỡng cùng dùng chung 1 danh sách bệnh nhân**, file này **chưa thể dùng ngay cho thực tế** — cần gắn thêm một backend/database thật để lưu và đồng bộ dữ liệu. Xem mục "Bước tiếp theo" bên dưới.
+### Kiến trúc tóm tắt
 
-## Bước tiếp theo: chọn giải pháp lưu trữ dùng chung
+- **Firestore** (`patients` collection): mỗi bệnh nhân là 1 document, đồng bộ real-time tới mọi tab đang mở qua `onSnapshot()`.
+- **Firebase Authentication** (Email/Password): gác cổng toàn bộ ứng dụng qua `onAuthStateChanged` — chưa đăng nhập thì không thấy giao diện chính.
+- **Mã bệnh nhân (id)** được cấp phát tuần tự, an toàn khi nhiều người thêm bệnh nhân cùng lúc (dùng Firestore transaction trên document đếm `meta/counter`), tránh trùng ID.
+- Toàn bộ Firebase SDK được nhúng qua CDN (`gstatic.com`), không cần cài đặt hay build gì thêm — vẫn là 1 file `index.html` mở trực tiếp bằng trình duyệt (hoặc host tĩnh, xem mục GitHub bên dưới).
 
-Vì đây là dữ liệu bệnh nhân thật của bệnh viện quân y, việc chọn nơi lưu trữ dữ liệu **cần được đơn vị CNTT / An ninh của bệnh viện xem xét và phê duyệt** trước, không nên tự ý đẩy dữ liệu bệnh nhân lên một dịch vụ cloud bên ngoài khi chưa được phép. Một số hướng phổ biến, xếp theo mức độ phù hợp:
+### Lưu ý về bảo mật & phân quyền — khoa nên biết rõ trước khi dùng rộng rãi
 
-1. **Server/database nội bộ của bệnh viện (khuyến nghị nếu có sẵn)** — nhờ phòng CNTT bệnh viện dựng một backend nhỏ (ví dụ Node.js/Python + PostgreSQL hoặc MySQL) đặt trong mạng nội bộ hoặc trên hạ tầng do bệnh viện quản lý. Đây là lựa chọn an toàn nhất cho dữ liệu bệnh nhân quân y.
-2. **Dịch vụ cloud (Firebase, Supabase, Google Sheets API...)** — triển khai nhanh, có gói miễn phí, nhưng dữ liệu sẽ nằm trên hạ tầng của bên thứ ba ở nước ngoài. **Chỉ nên dùng nếu đã được đơn vị CNTT/an ninh bệnh viện đồng ý bằng văn bản**, và cần bật xác thực (authentication) + quy tắc phân quyền chặt chẽ trước khi nhập bất kỳ dữ liệu bệnh nhân thật nào.
-3. **Tạm thời dùng thử 1 người/1 máy** — nếu chỉ cần dùng thử trước khi có backend, có thể thêm lưu trữ cục bộ (localStorage) để không mất dữ liệu khi tải lại trang, nhưng vẫn chỉ giới hạn 1 máy, không dùng cho vận hành thật với nhiều người.
-
-Khi đã chọn được giải pháp, mã nguồn (`index.html`) đã sẵn sàng để nối vào backend: toàn bộ thao tác thêm/sửa bệnh nhân, tick checklist, chuyển giai đoạn đều đi qua các hàm JavaScript riêng biệt (`addPatient()`, `advance()`, `toggleChk()`, `removeP()`...) — chỉ cần thay phần đọc/ghi mảng `patients` trong bộ nhớ bằng lời gọi API tới backend thật.
+- **Ai đăng nhập cũng có toàn quyền đọc/ghi mọi bệnh nhân.** Firestore rules hiện tại chỉ kiểm tra "đã đăng nhập hay chưa" (`request.auth != null`), không phân biệt vai trò (bác sĩ điều trị / điều dưỡng / khoa khác...). Nghĩa là bất kỳ tài khoản nào cũng sửa/xoá được hồ sơ của bất kỳ bệnh nhân nào.
+- **Không có xác minh danh tính khi đăng ký** — ai có link cũng tự tạo được tài khoản. Nếu khoa muốn giới hạn chỉ người trong khoa dùng được, có 2 hướng đơn giản có thể nhờ làm thêm sau:
+  1. Tắt đăng ký tự do, chuyển sang mô hình admin tạo tài khoản sẵn cho từng người (Firebase Console → Authentication → Users → "Add user").
+  2. Giới hạn theo domain email (ví dụ chỉ cho phép `@benhvien175.vn`) ngay trong lúc đăng ký.
+- **Quản lý/xoá tài khoản:** vào [Firebase Console](https://console.firebase.google.com/) → chọn project `quan-ly-benh-nhan-ho-hap` → **Authentication → Users**. Có thể xoá tài khoản (ví dụ người đã chuyển khoa/nghỉ việc) trực tiếp tại đây, không cần sửa code.
+- **Xem/xoá dữ liệu bệnh nhân trực tiếp:** Firebase Console → **Firestore Database** → collection `patients`. Có thể sửa/xoá từng document tại đây nếu cần, tách biệt hoàn toàn với việc sửa qua giao diện ứng dụng.
+- **`firebaseConfig` (chứa `apiKey`) hiển thị công khai trong mã nguồn `index.html` — đây KHÔNG phải là rò rỉ bí mật.** Theo thiết kế của Firebase, các key này chỉ dùng để xác định đúng project, không phải thông tin xác thực bí mật; an ninh thật sự nằm ở Firestore Rules + Authentication (đã bật). Vì vậy không cần và không nên tìm cách "giấu" `firebaseConfig` khỏi mã nguồn.
+- Nếu sau này bổ sung thêm dịch vụ khác cần khoá bí mật thật (ví dụ server riêng, API key của bên thứ ba khác), **tuyệt đối không commit các khoá đó vào git** — dùng biến môi trường hoặc file cấu hình nằm ngoài git (`.gitignore`), khác với trường hợp `firebaseConfig` ở trên.
 
 ## Đưa lên GitHub
 
-- **Dùng repository RIÊNG TƯ (private)**, không public — kể cả khi chưa có dữ liệu bệnh nhân thật, đây là công cụ nội bộ của khoa.
-- **Không commit dữ liệu bệnh nhân thật vào git** dưới bất kỳ hình thức nào (không paste vào README, không lưu file .csv/.json export vào repo). Vì lịch sử git lưu lại vĩnh viễn, xóa file sau này không xóa được dữ liệu khỏi lịch sử.
-- Nếu sau này thêm backend, tuyệt đối không commit API key / mật khẩu / chuỗi kết nối database vào repo — dùng biến môi trường (environment variables) hoặc file cấu hình nằm ngoài git (`.gitignore`).
-- Có thể host tĩnh bằng **GitHub Pages** (Settings → Pages → chọn nhánh) để có link truy cập nhanh trong lúc chưa có backend — nhưng nhắc lại: ở trạng thái hiện tại (chưa có backend) chỉ nên dùng để xem giao diện/demo quy trình, không nhập dữ liệu bệnh nhân thật vào đó vì sẽ mất khi đóng trình duyệt.
+- Dùng repository **RIÊNG TƯ (private)**, không public — đây là công cụ nội bộ của khoa. (Đã đặt private.)
+- **Không commit dữ liệu bệnh nhân thật vào git** dưới bất kỳ hình thức nào (không paste vào README, không lưu file `.csv`/`.json` export vào repo). Lịch sử git lưu lại vĩnh viễn — xoá file sau này không xoá được dữ liệu khỏi lịch sử. (Lưu ý: dữ liệu bệnh nhân vận hành thật hiện nằm trong Firestore, không nằm trong file `index.html` hay trong git — nên rủi ro này chủ yếu áp dụng nếu sau này có ai export CSV rồi lỡ tay commit vào repo.)
+- Có thể host tĩnh bằng GitHub Pages (Settings → Pages) nếu muốn có link truy cập nhanh — với backend Firebase đã bật, host ở bất kỳ đâu (kể cả mở file `index.html` trực tiếp từ máy) đều cho cùng 1 dữ liệu dùng chung.
 
 ## Trước khi dùng chính thức, khoa nên tự rà lại thêm
 
-- Danh sách bác sĩ trong file (`DOCTORS` ở đầu phần `<script>`) hiện là **tên giữ chỗ (placeholder)** — cần thay bằng danh sách bác sĩ thật của khoa.
-- Cân nhắc thêm chức năng đăng nhập/phân quyền nếu nhiều người cùng dùng, để biết ai thao tác gì trên hồ sơ bệnh nhân nào.
-- Cân nhắc chính sách sao lưu (backup) định kỳ khi đã có backend/database thật.
+- Cân nhắc siết lại đăng ký tài khoản theo hướng ở mục "Lưu ý về bảo mật & phân quyền" nếu thấy cần, thay vì để đăng ký tự do mãi mãi.
+- Cân nhắc thêm phân quyền theo vai trò (ví dụ chỉ bác sĩ phụ trách mới xoá được bệnh nhân của mình) nếu quy mô dùng lớn hơn — hiện tại chưa có, mọi tài khoản ngang quyền nhau.
+- Cân nhắc chính sách sao lưu (backup) định kỳ dữ liệu Firestore (Firebase có tính năng export tự động trên gói trả phí, hoặc export thủ công định kỳ qua Console ở gói miễn phí).
+- Theo dõi hạn mức sử dụng miễn phí (Spark plan) của Firebase nếu số lượng bệnh nhân/thao tác tăng nhiều — xem tại Firebase Console → Usage.
 
 ## Đã sửa so với bản trước
 
-- Xóa toàn bộ danh sách bệnh nhân mẫu/demo — khởi động với danh sách rỗng.
-- Ngày "hôm nay" trong ứng dụng nay lấy theo ngày thực tế của máy khi mở trang (trước đây hardcode cố định 18/07/2026).
-- Checklist của bệnh nhân mới luôn khởi tạo ở trạng thái **chưa hoàn thành toàn bộ** (trước đây tự động tick sẵn ngẫu nhiên một số mục — dễ gây hiểu lầm là đã làm xong việc chưa làm).
-- Form "Thêm bệnh nhân" có thêm các trường Địa chỉ, Đối tượng BHYT, Số thẻ BHYT (trước đây các trường này bị tự sinh số liệu giả).
-- Panel "Thống kê" và "Bệnh nhân nổi bật/cần ưu tiên" nay tính từ dữ liệu bệnh nhân thật đang có trong hệ thống, không còn số liệu/ngày tháng cố định.
+- **Tích hợp backend Firebase (Firestore + Authentication)** — thay cho lưu trữ chỉ trong bộ nhớ trình duyệt. Dữ liệu nay dùng chung và đồng bộ real-time giữa nhiều người dùng.
+- Thêm màn hình đăng nhập/đăng ký bằng email + mật khẩu, gác cổng toàn bộ ứng dụng.
+- Mọi thao tác thêm/sửa bệnh nhân, tick checklist, chuyển giai đoạn, xoá bệnh nhân đều ghi trực tiếp vào Firestore và đồng bộ tới các tab/máy khác đang mở.
+- Cấp mã bệnh nhân (ID) tuần tự an toàn khi nhiều người thêm bệnh nhân cùng lúc (transaction Firestore), tránh trùng ID giữa các bác sĩ.
